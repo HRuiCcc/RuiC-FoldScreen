@@ -4,11 +4,17 @@
 
 一个 macOS 菜单栏小程序：读取笔记本内置的翻盖角度传感器，按视角投影把桌面压出折角，越靠上越模糊，直到屏幕熄灭。免费、开源、纯本地。
 
-![折角过程](docs/fold-progression.png)
+![合盖弯屏效果演示](docs/fold-demo.gif)
 
-> 从左到右：盖子打开（原样）→ 折到一半 → 完全折起。
+> 上面这段就是实际效果（用真实渲染管线导出，非手绘示意）：合上盖子的过程里，桌面跟着一起弯——上方两角向内收拢成梯形，越靠上越虚，转轴一侧始终保持清晰。
 
 灵感来自折叠屏手机的开合动画，以及 [Bendy](https://trybendy.app/) 对这一效果的公开实现。本项目是一份**独立的复刻重写**，代码从零实现，与 Bendy 及 Apple 均无关联。
+
+### 三个阶段对照
+
+![折角三阶段](docs/fold-progression.png)
+
+从左到右：盖子打开（桌面原样）→ 折到一半 → 完全折起。静态图比 GIF 清晰，方便看清折角的边缘细节。
 
 ---
 
@@ -86,6 +92,23 @@ $BIN --smoke                       # 拉起完整链路并在 3 秒后写诊断�
 
 ```sh
 $BIN --render-frames out --size 1280x800 --steps 6 --preset 1
+```
+
+仓库里那段演示 GIF 就是用这个入口做的，配方如下（可自行改分辨率与步数）：
+
+```sh
+# 1. 导出一次完整的「开 → 合 → 开」循环。--cycle 让首尾都停在桌面原样，
+#    所以循环播放不会跳帧；--no-grain 去掉抗色带噪点——屏幕上看它是好事，
+#    但 GIF 只有 256 色，噪点会被量化成逐像素闪烁，帧间压缩直接失效。
+$BIN --render-frames frames --size 800x500 --steps 54 --cycle --no-grain
+
+# 2. 合成 GIF。bayer_scale=3 是关键：调大到 5 体积能省三成，
+#    但月亮光晕那种大面积平滑渐变会出现肉眼可见的同心圆色带。
+ffmpeg -y -framerate 18 -pattern_type glob -i 'frames/fold-*.png' \
+  -vf "fps=18,scale=800:-1:flags=lanczos,split[s0][s1];\
+[s0]palettegen=max_colors=128:stats_mode=diff[p];\
+[s1][p]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle" \
+  -loop 0 fold-demo.gif
 ```
 
 ## ⚙️ 工作原理

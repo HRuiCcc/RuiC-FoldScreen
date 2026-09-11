@@ -138,7 +138,12 @@ enum Harness {
 
     /// Renders a closure sweep through the real pipeline, for visual review.
     ///
-    /// `--render-frames <dir> [--size WxH] [--steps N] [--preset 0|1|2] [--hold <closure>]`
+    /// `--render-frames <dir> [--size WxH] [--steps N] [--preset 0|1|2]
+    ///  [--hold <closure>] [--cycle] [--no-grain]`
+    ///
+    /// With `--cycle` the sweep runs up and back down again, eased at both ends,
+    /// which is what the demo GIF needs: it starts and finishes at a flat desktop,
+    /// so the animation loops without a jump.
     static func renderFrames(_ arguments: [String]) -> Int {
         guard let directory = value(for: "--render-frames", in: arguments) else {
             print("--render-frames needs an output directory")
@@ -148,6 +153,9 @@ enum Harness {
         let steps = Int(value(for: "--steps", in: arguments) ?? "") ?? 7
         let preset = FoldPreset(rawValue: Int(value(for: "--preset", in: arguments) ?? "") ?? 0) ?? .veil
         let hold = value(for: "--hold", in: arguments).flatMap(Double.init)
+        let cycle = arguments.contains("--cycle")
+        // GIF export wants flat gradients, not the anti-banding noise.
+        let grain = !arguments.contains("--no-grain")
 
         var settings = FoldSettings.default
         settings.preset = preset
@@ -155,16 +163,18 @@ enum Harness {
         let folder = URL(fileURLWithPath: directory)
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            let renderer = try FoldRenderer(previewImage: PreviewArtwork.make())
+            let renderer = try FoldRenderer(previewImage: PreviewArtwork.make(grain: grain))
             let workingWidth = Double(min(1280 / 4, 512))
 
             for step in 0..<steps {
-                let closure = hold ?? Double(step) / Double(max(1, steps - 1))
+                let closure = hold ?? closureForStep(step, steps: steps, cycle: cycle)
                 let uniforms = FoldTuning.uniforms(
                     closure: closure, settings: settings, aspect: size.width / size.height,
                     workingWidth: workingWidth)
                 let image = try renderer.snapshot(size: size, uniforms: uniforms)
-                let name = String(format: "fold-%02d-%.2f.png", step, closure)
+                // The step counter leads so the frames sort correctly even when
+                // several share the same closure, as happens at a cycle's ends.
+                let name = String(format: "fold-%03d-%.3f.png", step, closure)
                 try write(image, to: folder.appendingPathComponent(name))
             }
             print("rendered \(steps) frame(s) at \(Int(size.width))x\(Int(size.height)) → \(folder.path)")
@@ -176,6 +186,21 @@ enum Harness {
     }
 
     // MARK: - Helpers
+
+    /// Closure for one frame of the sweep.
+    ///
+    /// A plain sweep is linear, which is right for inspecting the effect stage by
+    /// stage. A cycle instead travels up and back down a triangle and eases the
+    /// result with the same quintic the live effect uses, so the GIF starts and
+    /// ends at rest on a flat desktop and loops cleanly.
+    private static func closureForStep(_ step: Int, steps: Int, cycle: Bool) -> Double {
+        let last = max(1, steps - 1)
+        let t = Double(step) / Double(last)
+        guard cycle else { return t }
+        let triangle = t < 0.5 ? t * 2 : (1 - t) * 2
+        // Reuse the live curve so the demo cannot drift from the real motion.
+        return triangle * triangle * triangle * (triangle * (triangle * 6 - 15) + 10)
+    }
 
     private static func value(for flag: String, in arguments: [String]) -> String? {
         guard let index = arguments.firstIndex(of: flag), arguments.count > index + 1 else {

@@ -25,7 +25,7 @@ if flag("--help") || flag("-h") {
           RuiC-FoldScreen --selftest          跑无界面自检（数学、着色器、传感器、离屏渲染）
           RuiC-FoldScreen --sensor            读一次翻盖角度
           RuiC-FoldScreen --render-frames DIR 用真实渲染管线输出折角序列，供人工查看
-              [--size 960x600] [--steps 7] [--preset 0|1|2] [--hold 0.8]
+              [--size 960x600] [--steps 7] [--preset 0|1|2] [--hold 0.8] [--cycle] [--no-grain]
           RuiC-FoldScreen --scripted-lid       用脚本化的翻盖角度启动（无需真实盖子）
           RuiC-FoldScreen --smoke              启用效果并在 3 秒后写出自检报告到 /tmp
 

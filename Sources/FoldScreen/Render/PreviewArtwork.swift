@@ -12,7 +12,11 @@ enum PreviewArtwork {
 
     static let size = CGSize(width: 1280, height: 800)
 
-    static func make(size requested: CGSize = size) -> CGImage {
+    /// - Parameter grain: the anti-banding noise layer. Worth keeping on screen,
+    ///   where it hides the steps in an eight-bit gradient, but worth dropping
+    ///   for GIF export: a 256-colour palette turns the noise into per-pixel
+    ///   flicker that defeats inter-frame compression.
+    static func make(size requested: CGSize = size, grain: Bool = true) -> CGImage {
         let width = Int(requested.width)
         let height = Int(requested.height)
         let colorSpace = CGColorSpaceCreateDeviceRGB()
@@ -35,7 +39,7 @@ enum PreviewArtwork {
         drawMoon(in: context, width: w, height: h)
         drawClouds(in: context, width: w, height: h)
         drawRidges(in: context, width: w, height: h)
-        drawGrain(in: context, width: w, height: h)
+        if grain { drawGrain(in: context, width: w, height: h) }
 
         return context.makeImage() ?? fallbackPixel()
     }
