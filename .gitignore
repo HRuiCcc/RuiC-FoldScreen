@@ -1,0 +1,11 @@
+# Build output
+build/
+dist/
+
+# Generated from Shaders/Fold.metal by Tools/embed_shader.py
+Generated/
+
+# Xcode / macOS
+.DS_Store
+xcuserdata/
+*.xcuserstate
