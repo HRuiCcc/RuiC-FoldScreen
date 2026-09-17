@@ -26,6 +26,8 @@ final class FoldPreview: ObservableObject {
 
     private var ticker: Timer?
     private var startedAt = CACurrentMediaTime()
+    /// Watches the settings, because the preview draws from them.
+    private var settingsObservation: AnyCancellable?
 
     init(store: SettingsStore) {
         self.store = store
@@ -51,10 +53,28 @@ final class FoldPreview: ObservableObject {
             // just reports itself as unavailable.
             self.loadFailure = error.localizedDescription
         }
+        // The frame is drawn from the settings as well as the angle, so changing
+        // one has to produce a new frame even when the angle is still. Saying so
+        // here keeps the rule in a single place: the view only has to compare
+        // `frameKey` to know whether a redraw is owed.
+        settingsObservation = store.$settings
+            .dropFirst()
+            .sink { [weak self] _ in self?.objectWillChange.send() }
         // A still frame means the preview never needs a live capture.
         if let buffer = StillFrameSource(image: artwork) as DesktopFrames? {
             Task { try? await buffer.start(displayID: 0) }
         }
+    }
+
+    /// Everything a preview frame is drawn from.
+    ///
+    /// The view compares this to tell a real change from a layout pass that
+    /// happens to land in `updateNSView`.
+    var frameKey: FrameKey { FrameKey(angle: angle, settings: store.settings) }
+
+    struct FrameKey: Equatable {
+        var angle: Double
+        var settings: FoldSettings
     }
 
     /// The preview draws at a fixed working width so it matches the overlay's
@@ -126,6 +146,17 @@ final class FoldPreview: ObservableObject {
 struct FoldPreviewView: NSViewRepresentable {
     @ObservedObject var preview: FoldPreview
 
+    final class Coordinator {
+        /// The frame the Metal view was last asked to draw.
+        ///
+        /// `updateNSView` also runs for layout passes that change nothing, and
+        /// asking for a redraw each time keeps the display cycle awake for as
+        /// long as the window is open.
+        var drawn: FoldPreview.FrameKey?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeNSView(context: Context) -> MTKView {
         guard let renderer = preview.renderer else {
             let placeholder = MTKView()
@@ -142,11 +173,15 @@ struct FoldPreviewView: NSViewRepresentable {
 
     func updateNSView(_ view: MTKView, context: Context) {
         // `angle` changes on every animation tick, and touching the view here is
-        // what turns that into a new frame.
+        // what turns that into a new frame. Compare first, so a pass that would
+        // draw the same frame again does not mark the view dirty.
+        let key = preview.frameKey
+        guard context.coordinator.drawn != key else { return }
+        context.coordinator.drawn = key
         view.setNeedsDisplay(view.bounds)
     }
 
-    static func dismantleNSView(_ view: MTKView, coordinator: ()) {
+    static func dismantleNSView(_ view: MTKView, coordinator: Coordinator) {
         view.isPaused = true
         view.delegate = nil
     }

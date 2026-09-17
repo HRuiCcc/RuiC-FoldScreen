@@ -39,6 +39,24 @@ final class SettingsStore: ObservableObject {
     }
 }
 
+/// The lid angle, as the settings window reads it.
+///
+/// Kept apart from `LiveFold` because of how SwiftUI reacts to publishing
+/// objects: a view that observes one re-runs its body on every publish, and a
+/// body as large as the settings window costs a full layout pass. The sensor
+/// reports every 16 ms while the effect is live, so an angle published from the
+/// effect would re-measure that whole window sixty times a second. Only the one
+/// small readout that shows the number watches this object instead.
+@MainActor
+final class LidReadout: ObservableObject {
+    @Published private(set) var angle: Double?
+
+    /// Records a reading, ignoring one that would not change what is on screen.
+    func update(_ angle: Double?) {
+        if self.angle != angle { self.angle = angle }
+    }
+}
+
 /// Drives the live effect: reads the lid, captures the desktop, folds it, and
 /// puts it on screen.
 ///
@@ -63,9 +81,20 @@ final class LiveFold: ObservableObject {
 
     @Published private(set) var state: State = .off
     /// Latest lid angle, or `nil` while the sensor has nothing to report.
-    @Published private(set) var lidAngle: Double?
-    /// Current closure fraction, for the menu bar and diagnostics.
-    @Published private(set) var closure: Double = 0
+    ///
+    /// Lives on its own object rather than as a property here. The sensor reports
+    /// every 16 ms while the effect is live, and SwiftUI re-runs the body of every
+    /// view that observes a publishing object, which for the settings window means
+    /// a full layout pass. An angle published from this class would therefore
+    /// re-measure that whole window sixty times a second; only the one small
+    /// readout that shows the number watches this instead.
+    let lid = LidReadout()
+    /// Current closure fraction, for diagnostics.
+    ///
+    /// Deliberately not `@Published`: the frame loop writes it sixty times a
+    /// second and no view shows it, so publishing would invalidate the settings
+    /// window on every frame to display nothing.
+    private(set) var closure: Double = 0
     /// What the user asked for, which survives relaunches.
     @Published private(set) var isEnabled = false
     @Published private(set) var openAtLogin = false
@@ -110,7 +139,7 @@ final class LiveFold: ObservableObject {
 
         self.sensor.onAngle = { [weak self] angle in
             guard let self else { return }
-            if self.lidAngle != angle { self.lidAngle = angle }
+            self.lid.update(angle)
             // Losing the sensor while the effect is live means the lid just shut
             // or the machine is mid-sleep: either way the effect has to pause.
             if angle == nil, self.state == .live, self.store.settings.followLid {
@@ -425,7 +454,7 @@ final class LiveFold: ObservableObject {
         lastTick = now
 
         let settings = store.settings
-        let angle = settings.followLid ? (lidAngle ?? settings.clearAngle) : settings.manualAngle
+        let angle = settings.followLid ? (lid.angle ?? settings.clearAngle) : settings.manualAngle
         let target = FoldKinematics.closure(angle: angle, clearAngle: settings.clearAngle)
 
         // Respect Reduce Motion: jump straight to the target instead of easing,
@@ -476,7 +505,7 @@ final class LiveFold: ObservableObject {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.isAsleep = false
-                self.lidAngle = nil
+                self.lid.update(nil)
                 self.sensor.reconnect()
                 self.scheduleReconnect()
             }
@@ -553,7 +582,7 @@ final class LiveFold: ObservableObject {
         lines.append("enabled=\(isEnabled)")
         lines.append("closure=\(String(format: "%.4f", closure))")
         lines.append(
-            "lidAngle=\(lidAngle.map { String(format: "%.0f", $0) } ?? "none")")
+            "lidAngle=\(lid.angle.map { String(format: "%.0f", $0) } ?? "none")")
         lines.append("overlayVisible=\(overlay.isVisible)")
         lines.append("renderer=\(renderer == nil ? "none" : "ready")")
         lines.append("builtInScreen=\(Self.builtInScreen() != nil)")
