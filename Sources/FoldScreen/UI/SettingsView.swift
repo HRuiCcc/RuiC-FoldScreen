@@ -39,7 +39,11 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
 struct SettingsView: View {
     @ObservedObject var store: SettingsStore
     @ObservedObject var effect: LiveFold
-    @ObservedObject var preview: FoldPreview
+    /// Not observed, on purpose. A play-through moves `angle` on every frame, and
+    /// observing it here would re-measure every pane of this window sixty times a
+    /// second. `PreviewCard` is the only thing that shows it, so that is the only
+    /// thing that watches it.
+    let preview: FoldPreview
 
     @State private var pane: SettingsPane = .general
 
@@ -208,49 +212,7 @@ struct SettingsView: View {
 
     private var appearancePane: some View {
         VStack(alignment: .leading, spacing: 18) {
-            SectionCard("预览") {
-                VStack(spacing: 14) {
-                    Text("用内置画面预览折角，不需要屏幕录制权限。")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    ZStack(alignment: .bottom) {
-                        FoldPreviewView(preview: preview)
-                            .aspectRatio(1.6, contentMode: .fit)
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        Button {
-                            if preview.isPlaying { preview.pause() } else { preview.play() }
-                        } label: {
-                            Label(
-                                preview.isPlaying ? "暂停" : "播放折角",
-                                systemImage: preview.isPlaying ? "pause.fill" : "play.fill")
-                        }
-                        .controlSize(.large)
-                        .buttonStyle(.borderedProminent)
-                        .padding(.bottom, 14)
-                    }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(.separator)
-                    }
-
-                    HStack(spacing: 10) {
-                        Image(systemName: "laptopcomputer")
-                            .foregroundStyle(.secondary)
-                        Slider(value: Binding(
-                            get: { preview.angle },
-                            set: { preview.angle = $0; preview.scrub() }
-                        ), in: 12...135)
-                        .accessibilityLabel("预览翻盖角度")
-                        Text("\(Int(preview.angle))°")
-                            .font(.callout.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .frame(width: 42, alignment: .trailing)
-                    }
-                }
-                .padding(14)
-            }
+            PreviewCard(preview: preview)
 
             SectionCard("外观") {
                 VStack(alignment: .leading, spacing: 0) {
@@ -303,20 +265,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 18) {
             SectionCard("翻盖传感器") {
                 VStack(alignment: .leading, spacing: 0) {
-                    HStack(alignment: .firstTextBaseline) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(effect.lidAngle == nil ? "未检测到传感器" : "传感器已连接")
-                                .font(.callout.weight(.medium))
-                            Text("当前翻盖角度。读不到角度时可以用下面的手动角度。")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer(minLength: 12)
-                        Text(effect.lidAngle.map { "\(Int($0))°" } ?? "—")
-                            .font(.system(size: 26, weight: .light).monospacedDigit())
-                    }
-                    .padding(14)
+                    LidSensorRow(lid: effect.lid)
 
                     Divider()
                     LabeledRow(title: "跟随物理翻盖", detail: "关掉后改用固定的桌面角度。") {
@@ -423,6 +372,86 @@ struct SettingsView: View {
 }
 
 // MARK: - Building blocks
+
+/// The preview card, split out of `SettingsView` so that the animation driving
+/// it only invalidates this subtree.
+///
+/// `FoldPreview.angle` moves on every frame of a play-through. A window that
+/// observed it directly would re-run its own body, and so re-measure every pane,
+/// on each of those frames; this card is the only thing that actually shows the
+/// angle, so this card is what watches it.
+private struct PreviewCard: View {
+    @ObservedObject var preview: FoldPreview
+
+    var body: some View {
+        SectionCard("预览") {
+            VStack(spacing: 14) {
+                Text("用内置画面预览折角，不需要屏幕录制权限。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                ZStack(alignment: .bottom) {
+                    FoldPreviewView(preview: preview)
+                        .aspectRatio(1.6, contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    Button {
+                        if preview.isPlaying { preview.pause() } else { preview.play() }
+                    } label: {
+                        Label(
+                            preview.isPlaying ? "暂停" : "播放折角",
+                            systemImage: preview.isPlaying ? "pause.fill" : "play.fill")
+                    }
+                    .controlSize(.large)
+                    .buttonStyle(.borderedProminent)
+                    .padding(.bottom, 14)
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(.separator)
+                }
+
+                HStack(spacing: 10) {
+                    Image(systemName: "laptopcomputer")
+                        .foregroundStyle(.secondary)
+                    Slider(value: Binding(
+                        get: { preview.angle },
+                        set: { preview.angle = $0; preview.scrub() }
+                    ), in: 12...135)
+                    .accessibilityLabel("预览翻盖角度")
+                    Text("\(Int(preview.angle))°")
+                        .font(.callout.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(width: 42, alignment: .trailing)
+                }
+            }
+            .padding(14)
+        }
+    }
+}
+
+/// The live lid angle, on its own so the sensor's poll rate only invalidates this
+/// row rather than every pane in the window.
+private struct LidSensorRow: View {
+    @ObservedObject var lid: LidReadout
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(lid.angle == nil ? "未检测到传感器" : "传感器已连接")
+                    .font(.callout.weight(.medium))
+                Text("当前翻盖角度。读不到角度时可以用下面的手动角度。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            Text(lid.angle.map { "\(Int($0))°" } ?? "—")
+                .font(.system(size: 26, weight: .light).monospacedDigit())
+        }
+        .padding(14)
+    }
+}
 
 /// A titled group of rows, matching the grouped-card look of System Settings.
 private struct SectionCard<Content: View>: View {
