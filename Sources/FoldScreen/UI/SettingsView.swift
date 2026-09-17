@@ -115,6 +115,18 @@ struct SettingsView: View {
                     }
                     Divider()
                     LabeledRow(
+                        title: "隐藏菜单栏图标",
+                        detail: "图标收起后，重新打开本应用即可把它找回来。"
+                    ) {
+                        Toggle("", isOn: Binding(
+                            get: { store.settings.hideMenuBarIcon },
+                            set: { store.settings.hideMenuBarIcon = $0 }))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                    }
+                    Divider()
+                    LabeledRow(
                         title: "登录时打开",
                         detail: "在菜单栏启动，并恢复上次的开关状态。"
                     ) {
@@ -194,7 +206,7 @@ struct SettingsView: View {
                     Divider()
                     InfoRow(
                         symbol: "menubar.rectangle", title: "常驻菜单栏",
-                        detail: "关掉这个窗口不会退出，程序继续在菜单栏待命。")
+                        detail: "关掉这个窗口不会退出，程序继续待命；图标可以收起，重新打开本应用即可找回。")
                     Divider()
                     InfoRow(
                         symbol: "display", title: "只作用于内置屏",

@@ -52,6 +52,13 @@ struct FoldSettings: Equatable, Sendable {
     /// Play a soft click once the desktop has finished unfolding.
     var sound: Bool = false
 
+    /// Keep the menu bar item out of the menu bar.
+    ///
+    /// The item is the only route to the settings window, so hiding it is only
+    /// safe because launching the app again brings that window back; see
+    /// `AppDelegate.shouldOpenSettingsOnLaunch`.
+    var hideMenuBarIcon: Bool = false
+
     static let `default` = FoldSettings()
 
     /// Restores whatever the user last chose.
@@ -82,6 +89,9 @@ struct FoldSettings: Equatable, Sendable {
         if defaults.object(forKey: Keys.sound) != nil {
             settings.sound = defaults.bool(forKey: Keys.sound)
         }
+        if defaults.object(forKey: Keys.hideMenuBarIcon) != nil {
+            settings.hideMenuBarIcon = defaults.bool(forKey: Keys.hideMenuBarIcon)
+        }
         return settings.clamped()
     }
 
@@ -94,6 +104,7 @@ struct FoldSettings: Equatable, Sendable {
         defaults.set(followLid, forKey: Keys.followLid)
         defaults.set(manualAngle, forKey: Keys.manualAngle)
         defaults.set(sound, forKey: Keys.sound)
+        defaults.set(hideMenuBarIcon, forKey: Keys.hideMenuBarIcon)
     }
 
     /// Keeps every value inside the range the UI offers, so a hand-edited
@@ -117,6 +128,8 @@ struct FoldSettings: Equatable, Sendable {
         static let followLid = "fold.followLid"
         static let manualAngle = "fold.manualAngle"
         static let sound = "fold.sound"
+        /// Not a `fold.*` key: the menu bar item is the app's, not the fold's.
+        static let hideMenuBarIcon = "app.hideMenuBarIcon"
     }
 }
 

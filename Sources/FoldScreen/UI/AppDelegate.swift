@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// Wires the pieces together and owns the menu bar item.
@@ -14,6 +15,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var preview: FoldPreview!
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
+    /// Keeps the menu bar item in step with the preference.
+    private var iconObservation: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let store = SettingsStore()
@@ -28,7 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         self.effect = effect
         self.preview = preview
 
-        installStatusItem()
+        observeIconPreference()
 
         // The headless check takes precedence over whatever was persisted, so it
         // behaves the same on a machine that has run the app before.
@@ -40,13 +43,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 try? report.write(
                     toFile: "/tmp/foldscreen-smoke.txt", atomically: true, encoding: .utf8)
             }
-        } else if effect.isEnabled {
-            // Restore the effect if it was on when the app last quit.
-            effect.restoreIfNeeded()
         } else {
-            // Otherwise open settings, so a first run explains itself.
-            openSettings()
+            if effect.isEnabled {
+                // Restore the effect if it was on when the app last quit.
+                effect.restoreIfNeeded()
+            }
+            if shouldOpenSettingsOnLaunch {
+                openSettings()
+            }
         }
+    }
+
+    /// Whether launching the app should put the settings window on screen.
+    ///
+    /// A first run explains itself, and so does a launch that is the only route
+    /// back to a hidden menu bar item. A login-item launch is neither: the user
+    /// did not ask for anything, so it stays quiet.
+    private var shouldOpenSettingsOnLaunch: Bool {
+        guard !LoginItem.launchedAsLoginItem else { return false }
+        return !effect.isEnabled || store.settings.hideMenuBarIcon
+    }
+
+    /// Reopening a running app is how the user asks for the settings window back
+    /// once the menu bar item is hidden, so bring it up rather than doing nothing.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        openSettings()
+        return true
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -59,7 +81,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // MARK: - Menu bar
 
+    /// Puts the menu bar item in or out of the menu bar as the user asks.
+    ///
+    /// `@Published` replays the current value on subscription, so this also gets
+    /// the item right on launch without a separate code path.
+    private func observeIconPreference() {
+        iconObservation = store.$settings
+            .map(\.hideMenuBarIcon)
+            .removeDuplicates()
+            .sink { [weak self] hidden in self?.setMenuBarItemHidden(hidden) }
+    }
+
+    private func setMenuBarItemHidden(_ hidden: Bool) {
+        if hidden {
+            guard let statusItem else { return }
+            NSStatusBar.system.removeStatusItem(statusItem)
+            self.statusItem = nil
+        } else {
+            installStatusItem()
+        }
+    }
+
     private func installStatusItem() {
+        guard statusItem == nil else { return }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(
             systemSymbolName: "laptopcomputer", accessibilityDescription: "合盖弯屏")
