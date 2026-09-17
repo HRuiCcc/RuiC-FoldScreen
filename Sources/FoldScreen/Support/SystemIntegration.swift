@@ -80,6 +80,21 @@ final class EscapeHotKey {
 enum LoginItem {
     static var isEnabled: Bool { SMAppService.mainApp.status == .enabled }
 
+    /// Whether this launch came from the login item rather than from the user.
+    ///
+    /// launchd marks a login-item launch by putting `keyAELaunchedAsLogInItem` in
+    /// the open-application event, which is the documented way to tell the two
+    /// apart. The distinction starts to matter once the menu bar item is hidden,
+    /// because launching the app is then the only route back to the settings
+    /// window — and a login is not the user asking for that window.
+    static var launchedAsLoginItem: Bool {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent,
+            event.eventID == AEEventID(kAEOpenApplication)
+        else { return false }
+        return event.paramDescriptor(forKeyword: AEKeyword(keyAEPropData))?
+            .enumCodeValue == OSType(keyAELaunchedAsLogInItem)
+    }
+
     /// - Returns: an error message when the change could not be applied, or the
     ///   message explaining that macOS wants the user to approve it by hand.
     @discardableResult
