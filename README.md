@@ -190,3 +190,5 @@ build.sh                        唯一构建入口
 </p>
 
 <p align="center">微信扫码赞赏</p>
+
+<p align="center">微号：<strong>hrc_rch</strong>（说明来意）</p>
